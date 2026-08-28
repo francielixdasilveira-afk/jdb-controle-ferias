@@ -141,6 +141,7 @@
   .badge.pending{background:var(--pending-dim); color:var(--pending);}
   .badge.aprovado{background:var(--vacation-dim); color:var(--vacation);}
   .badge.negado{background:var(--danger-dim); color:var(--danger);}
+  .badge.cancelado{background:var(--surface-2); color:var(--text-muted);}
   .badge.vencida{background:var(--danger-dim); color:var(--danger);}
   .badge.vencendo{background:var(--pending-dim); color:var(--pending);}
 
@@ -191,6 +192,13 @@
   .type-toggle button.active[data-type="ferias"]{background:var(--vacation-dim); color:var(--vacation); border-color:var(--vacation);}
   .type-toggle button.active[data-type="aniversario"]{background:var(--birthday-dim); color:var(--birthday); border-color:var(--birthday);}
   .hint{font-size:11px; color:var(--text-muted); margin-top:-6px; margin-bottom:12px; line-height:1.4;}
+  .approve-now-toggle{
+    display:flex; align-items:center; gap:9px;
+    background:var(--vacation-dim); border:1px solid var(--vacation);
+    border-radius:10px; padding:11px 13px; margin-bottom:14px;
+    font-size:13px; color:var(--vacation); cursor:pointer;
+  }
+  .approve-now-toggle input{width:16px; height:16px; accent-color:var(--vacation); flex-shrink:0;}
 
   /* Calendar - dois meses lado a lado */
   .cal-nav-row{display:flex; justify-content:space-between; gap:8px; margin-bottom:14px;}
@@ -373,6 +381,10 @@
         <label>Observação (opcional)</label>
         <input type="text" id="reqNote" placeholder="Ex: dividir em dois períodos">
       </div>
+      <label class="approve-now-toggle">
+        <input type="checkbox" id="reqApproveNow" checked>
+        <span>Já aprovar esta solicitação (estou registrando como gestora)</span>
+      </label>
       <button type="submit" class="btn-primary" id="reqSubmitBtn">Enviar solicitação</button>
     </form>
 
@@ -505,6 +517,33 @@
       <div class="row2" style="margin-top:6px;">
         <button type="button" class="btn-ghost" onclick="closeEmployeeModal()">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-bg" id="editRequestModalBg">
+  <div class="modal">
+    <h3>Editar solicitação</h3>
+    <p class="hint" id="editRequestEmpLabel" style="margin-top:-8px;"></p>
+    <form id="editRequestForm">
+      <div class="row2" id="editRequestDatesRow">
+        <div class="field">
+          <label id="editReqStartLabel">Início</label>
+          <input type="date" id="editReqStart">
+        </div>
+        <div class="field" id="editReqEndField">
+          <label>Fim</label>
+          <input type="date" id="editReqEnd">
+        </div>
+      </div>
+      <div class="field">
+        <label>Observação (opcional)</label>
+        <input type="text" id="editReqNote" placeholder="Ex: dividir em dois períodos">
+      </div>
+      <div class="row2" style="margin-top:6px;">
+        <button type="button" class="btn-ghost" id="editReqCancelBtn">Fechar</button>
+        <button type="submit" class="btn-primary" id="editReqSaveBtn">Salvar alterações</button>
       </div>
     </form>
   </div>
@@ -1028,6 +1067,7 @@ async function submitRequest(ev){
   const start = reqSelStart;
   const end = reqType==='ferias' ? reqSelEnd : reqSelStart;
   const note = document.getElementById('reqNote').value.trim();
+  const approveNow = document.getElementById('reqApproveNow').checked;
   if(!employeeId){ toast('Selecione o funcionário'); return; }
   if(!start || (reqType==='ferias' && !end)){ toast('Selecione as datas no calendário'); return; }
 
@@ -1038,12 +1078,13 @@ async function submitRequest(ev){
       r.employeeId===employeeId && r.type==='ferias' && (r.status==='aprovado' || r.status==='pendente')
     ).length;
     if(periodDays < 5){
-      warnMsg = 'Enviado — atenção: CLT exige pelo menos 5 dias por período fracionado';
+      warnMsg = 'CLT exige pelo menos 5 dias por período fracionado';
     } else if(existingPeriods >= 3){
-      warnMsg = 'Enviado — atenção: esse já seria o 4º período (CLT permite no máx. 3)';
+      warnMsg = 'Esse já seria o 4º período (CLT permite no máx. 3)';
     }
   }
 
+  const initialStatus = approveNow ? 'aprovado' : 'pendente';
   const newReq = {
     id: uid(),
     employeeId,
@@ -1051,15 +1092,26 @@ async function submitRequest(ev){
     start,
     end,
     note,
-    status: 'pendente',
+    status: initialStatus,
     createdAt: new Date().toISOString()
   };
   const ok = await insertRequestRow(newReq);
   if(ok){
     requests.unshift(newReq);
     document.getElementById('requestForm').reset();
+    document.getElementById('reqApproveNow').checked = true;
     setReqType('ferias');
-    toast(warnMsg || 'Solicitação enviada');
+
+    let finalMsg = approveNow ? 'Registrado e aprovado' : 'Solicitação enviada como pendente';
+    if(approveNow && reqType==='ferias'){
+      const emp = employees.find(e=>e.id===employeeId);
+      if(emp){
+        const bal = vacationBalance(emp);
+        if(bal < 0) finalMsg += ` — saldo ficou em ${bal} dias (antecipação)`;
+      }
+    }
+    if(warnMsg) finalMsg += ' — atenção: ' + warnMsg;
+    toast(finalMsg);
     renderAll();
   }
 }
@@ -1089,6 +1141,76 @@ async function deleteRequest(id){
   const ok = await deleteRequestRow(id);
   if(ok){
     requests = requests.filter(r=>r.id!==id);
+    renderAll();
+  }
+}
+
+async function cancelRequest(id){
+  const r = requests.find(x=>x.id===id);
+  if(!r) return;
+  if(!confirm('Cancelar esta solicitação? O saldo de férias volta a ficar disponível se ela já estava aprovada.')) return;
+  const ok = await updateRequestRow(id, {status: 'cancelado'});
+  if(ok){
+    r.status = 'cancelado';
+    toast('Solicitação cancelada');
+    renderAll();
+  }
+}
+
+let editingRequestId = null;
+
+function openEditRequestModal(id){
+  const r = requests.find(x=>x.id===id);
+  if(!r) return;
+  editingRequestId = id;
+  const emp = employees.find(e=>e.id===r.employeeId);
+  const icon = r.type==='ferias' ? '🏖 Férias' : '🎂 Folga de aniversário';
+  document.getElementById('editRequestEmpLabel').textContent = `${icon} · ${emp ? emp.nome : '(removido)'}`;
+
+  document.getElementById('editReqStart').value = r.start;
+  document.getElementById('editReqNote').value = r.note || '';
+
+  const endField = document.getElementById('editReqEndField');
+  const startLabel = document.getElementById('editReqStartLabel');
+  if(r.type==='ferias'){
+    endField.style.display = 'block';
+    startLabel.textContent = 'Início';
+    document.getElementById('editReqEnd').value = r.end;
+  } else {
+    endField.style.display = 'none';
+    startLabel.textContent = 'Data da folga';
+  }
+
+  document.getElementById('editRequestModalBg').classList.add('active');
+}
+
+function closeEditRequestModal(){
+  editingRequestId = null;
+  document.getElementById('editRequestModalBg').classList.remove('active');
+}
+
+async function saveEditRequest(ev){
+  ev.preventDefault();
+  if(!editingRequestId) return;
+  const r = requests.find(x=>x.id===editingRequestId);
+  if(!r) return;
+
+  const newStart = document.getElementById('editReqStart').value;
+  const newEnd = r.type==='ferias' ? document.getElementById('editReqEnd').value : newStart;
+  const newNote = document.getElementById('editReqNote').value.trim();
+
+  if(!newStart || (r.type==='ferias' && !newEnd)){ toast('Preencha as datas'); return; }
+  if(r.type==='ferias' && new Date(newEnd) < new Date(newStart)){ toast('Data final antes da inicial'); return; }
+
+  const ok = await updateRequestRow(editingRequestId, {
+    start_date: newStart, end_date: newEnd, note: newNote
+  });
+  if(ok){
+    r.start = newStart;
+    r.end = newEnd;
+    r.note = newNote;
+    toast('Solicitação atualizada');
+    closeEditRequestModal();
     renderAll();
   }
 }
@@ -1159,29 +1281,39 @@ function renderPendingList(){
   const el = document.getElementById('pendingList');
   const pending = requests.filter(r=>r.status==='pendente');
   if(pending.length===0){ el.innerHTML = '<div class="empty">Sem solicitações pendentes 🎉</div>'; return; }
-  el.innerHTML = pending.map(r=>requestItemHTML(r, true)).join('');
+  el.innerHTML = pending.map(r=>requestItemHTML(r, 'pending')).join('');
 }
 
-function requestItemHTML(r, showActions){
+function requestItemHTML(r, mode){
   const emp = employees.find(e=>e.id===r.employeeId);
   const empName = emp ? emp.nome : '(removido)';
   const label = r.type==='ferias'
     ? `${fmtShort(r.start)} – ${fmtShort(r.end)} · ${daysBetween(r.start,r.end)} dias`
     : `Folga de aniversário · ${fmtShort(r.start)}`;
   const icon = r.type==='ferias' ? '🏖' : '🎂';
+
+  let actionsHTML;
+  if(mode==='pending'){
+    actionsHTML = `<div style="display:flex; gap:6px;">
+      <button class="btn-approve" onclick="updateStatus('${r.id}','aprovado')">OK</button>
+      <button class="btn-deny" onclick="updateStatus('${r.id}','negado')">X</button>
+    </div>`;
+  } else {
+    const canEdit = r.status==='pendente' || r.status==='aprovado';
+    actionsHTML = `<div style="display:flex; align-items:center; gap:6px;">
+      <span class="badge ${r.status}">${r.status}</span>
+      ${canEdit ? `<button class="btn-icon" title="Editar" onclick="openEditRequestModal('${r.id}')">✎</button>
+      <button class="btn-icon" title="Cancelar" onclick="cancelRequest('${r.id}')">✕</button>` : ''}
+    </div>`;
+  }
+
   return `<div class="item">
     <div class="avatar">${icon}</div>
     <div class="info">
       <div class="name">${empName}</div>
       <div class="sub">${label}${r.note ? ' · '+r.note : ''}</div>
     </div>
-    ${showActions
-      ? `<div style="display:flex; gap:6px;">
-          <button class="btn-approve" onclick="updateStatus('${r.id}','aprovado')">OK</button>
-          <button class="btn-deny" onclick="updateStatus('${r.id}','negado')">X</button>
-        </div>`
-      : `<span class="badge ${r.status}">${r.status}</span>`
-    }
+    ${actionsHTML}
   </div>`;
 }
 
@@ -1261,7 +1393,7 @@ function renderRequestEmployeeOptions(){
 function renderRequestsList(){
   const el = document.getElementById('requestsList');
   if(requests.length===0){ el.innerHTML = '<div class="empty">Nenhuma solicitação registrada.</div>'; return; }
-  el.innerHTML = requests.map(r=>requestItemHTML(r, false)).join('');
+  el.innerHTML = requests.map(r=>requestItemHTML(r, 'history')).join('');
 }
 
 function calShift(delta){
@@ -1394,6 +1526,9 @@ function wireRequestFormEvents(){
     if(!cell) return;
     pickReqDate(cell.dataset.date);
   });
+
+  document.getElementById('editRequestForm').addEventListener('submit', saveEditRequest);
+  document.getElementById('editReqCancelBtn').addEventListener('click', closeEditRequestModal);
 }
 
 wireRequestFormEvents();
