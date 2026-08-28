@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Férias · JDB Contabilidade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#0F1C30;
+    --surface:#182B47;
+    --surface-2:#20395C;
+    --border:#2C4468;
+    --text:#F2EEE3;
+    --text-muted:#93A6C4;
+    --vacation:#4FBF9F;
+    --vacation-dim:#294436;
+    --birthday:#FF8A5C;
+    --birthday-dim:#432A22;
+    --pending:#E8B84B;
+    --pending-dim:#40371E;
+    --danger:#E15B5B;
+    --danger-dim:#3D2323;
+    --weekend-bg:#1F4D3A;
+    --weekend-text:#6FE0AE;
+    --holiday-bg:#3A2340;
+    --holiday-text:#E39EDB;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding-bottom:78px;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  header.top{
+    padding:22px 18px 16px;
+    border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, #12213A 0%, #0F1C30 100%);
+    position:sticky; top:0; z-index:20;
+  }
+  header.top .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--vacation);
+    margin-bottom:4px;
+  }
+  header.top h1{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:22px;
+    margin:0;
+    line-height:1.2;
+  }
+  main{padding:16px; max-width:640px; margin:0 auto;}
+  .screen{display:none; animation:fade .25s ease;}
+  .screen.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  /* Wall planner strip - signature element */
+  .planner{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .planner-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;}
+  .planner-head h2{font-family:'Fraunces',serif; font-size:16px; margin:0; font-weight:600;}
+  .planner-head span{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted);}
+  .planner-strip{display:flex; gap:4px; overflow-x:auto; padding-bottom:4px;}
+  .planner-day{
+    flex:0 0 auto;
+    width:34px; height:52px;
+    border-radius:8px;
+    background:var(--surface-2);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    border:1px solid transparent;
+    position:relative;
+  }
+  .planner-day.today{border-color:var(--text); color:var(--text);}
+  .planner-day .dot{width:5px; height:5px; border-radius:50%; margin-top:3px;}
+  .planner-day.vac{background:var(--vacation-dim); color:var(--vacation);}
+  .planner-day.bday{background:var(--birthday-dim); color:var(--birthday);}
+
+  .stats-row{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
+  .stat-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+  }
+  .stat-card .num{font-family:'Fraunces',serif; font-size:28px; font-weight:600; line-height:1;}
+  .stat-card .label{font-size:12px; color:var(--text-muted); margin-top:6px;}
+
+  section.block{margin-bottom:20px;}
+  section.block h3{
+    font-family:'Fraunces',serif;
+    font-size:15px;
+    font-weight:600;
+    margin:0 0 10px;
+    color:var(--text);
+  }
+  .card-list{display:flex; flex-direction:column; gap:8px;}
+  .item{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 14px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .item .avatar{
+    width:34px; height:34px; border-radius:50%;
+    background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Fraunces',serif; font-weight:600; font-size:13px;
+    flex-shrink:0;
+  }
+  .item .info{flex:1; min-width:0;}
+  .item .info .name{font-weight:600; font-size:14px;}
+  .item .info .sub{font-size:12px; color:var(--text-muted); margin-top:1px;}
+  .badge{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    padding:3px 8px;
+    border-radius:20px;
+    white-space:nowrap;
+  }
+  .badge.pending{background:var(--pending-dim); color:var(--pending);}
+  .badge.aprovado{background:var(--vacation-dim); color:var(--vacation);}
+  .badge.negado{background:var(--danger-dim); color:var(--danger);}
+  .badge.vencida{background:var(--danger-dim); color:var(--danger);}
+  .badge.vencendo{background:var(--pending-dim); color:var(--pending);}
+
+  .empty{
+    text-align:center; padding:26px 14px;
+    color:var(--text-muted); font-size:13px;
+    background:var(--surface); border:1px dashed var(--border); border-radius:var(--radius);
+  }
+
+  button{font-family:'Inter',sans-serif; cursor:pointer;}
+  .btn-primary{
+    background:var(--vacation); color:#0F1C30;
+    border:none; border-radius:10px;
+    padding:12px 16px; font-weight:600; font-size:14px;
+    width:100%;
+  }
+  .btn-ghost{
+    background:transparent; color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:10px 14px; font-size:13px; font-weight:500;
+  }
+  .btn-icon{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; width:30px; height:30px; font-size:14px; flex-shrink:0;
+  }
+  .btn-approve{background:var(--vacation-dim); color:var(--vacation); border:1px solid var(--vacation);}
+  .btn-deny{background:var(--danger-dim); color:var(--danger); border:1px solid var(--danger);}
+  .btn-approve, .btn-deny{
+    border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace;
+  }
+
+  form.panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; margin-bottom:16px;
+  }
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--text-muted); margin-bottom:5px; font-weight:500;}
+  .field input, .field select{
+    width:100%; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:10px 11px; color:var(--text); font-size:14px; font-family:'Inter',sans-serif;
+  }
+  .field input:focus, .field select:focus{outline:none; border-color:var(--vacation);}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .type-toggle{display:flex; gap:8px; margin-bottom:12px;}
+  .type-toggle button{
+    flex:1; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text-muted); font-size:13px; font-weight:600;
+  }
+  .type-toggle button.active[data-type="ferias"]{background:var(--vacation-dim); color:var(--vacation); border-color:var(--vacation);}
+  .type-toggle button.active[data-type="aniversario"]{background:var(--birthday-dim); color:var(--birthday); border-color:var(--birthday);}
+  .hint{font-size:11px; color:var(--text-muted); margin-top:-6px; margin-bottom:12px; line-height:1.4;}
+
+  /* Calendar - dois meses lado a lado */
+  .cal-nav-row{display:flex; justify-content:space-between; gap:8px; margin-bottom:14px;}
+  .cal-nav-btn{
+    flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:10px; font-size:13px; font-weight:600;
+  }
+  .cal-pair{
+    display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding-bottom:4px; margin-bottom:4px;
+  }
+  .cal-month{
+    flex:0 0 88%; scroll-snap-align:start;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px;
+  }
+  @media (min-width:640px){ .cal-month{ flex:1 1 0; } }
+  .cal-month h3{
+    font-family:'Fraunces',serif; font-size:15px; font-weight:600; margin:0 0 10px;
+    text-transform:capitalize;
+  }
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .cal-dow{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-muted); text-align:center; padding-bottom:4px;}
+  .cal-cell{
+    aspect-ratio:1; border-radius:7px; background:var(--surface-2);
+    border:1px solid transparent;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-muted); gap:2px;
+  }
+  .cal-cell.blank{background:transparent; border-color:transparent;}
+  .cal-cell.today{border-color:var(--text); color:var(--text);}
+  .cal-cell.weekend{background:var(--weekend-bg); color:var(--weekend-text);}
+  .cal-cell.holiday{background:var(--holiday-bg); color:var(--holiday-text);}
+  .cal-cell .dots{display:flex; gap:2px;}
+  .cal-cell .dots span{width:4px; height:4px; border-radius:50%;}
+  .legend{display:flex; gap:14px; margin-top:6px; font-size:11px; color:var(--text-muted); flex-wrap:wrap;}
+  .legend span{display:flex; align-items:center; gap:5px;}
+  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
+
+  /* Calendário de seleção dentro do formulário de solicitações */
+  .field-label-row label{display:block; font-size:12px; color:var(--text-muted); margin-bottom:8px; font-weight:500;}
+  .req-selection{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .req-selection .sel-pill{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:20px;
+    padding:6px 12px; font-size:12px; font-family:'JetBrains Mono',monospace; color:var(--text-muted);
+  }
+  .req-selection .sel-pill.filled{color:var(--text); border-color:var(--vacation);}
+  .req-cal-nav{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .req-cal-nav button{
+    width:30px; height:30px; border-radius:8px; background:var(--surface-2);
+    border:1px solid var(--border); color:var(--text); font-size:15px;
+  }
+  .req-cal-nav span{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-muted); text-transform:capitalize;}
+  .req-cal-pair{margin-bottom:6px;}
+  .req-cal-pair .cal-month{background:var(--surface-2); padding:12px;}
+  .req-cal-pair .cal-cell{cursor:pointer; background:var(--surface); transition:background .1s;}
+  .req-cal-pair .cal-cell.blank{cursor:default;}
+  .req-cal-pair .cal-cell.disabled{opacity:.3; cursor:not-allowed;}
+  .req-cal-pair .cal-cell.weekend{background:var(--weekend-bg); color:var(--weekend-text);}
+  .req-cal-pair .cal-cell.holiday{background:var(--holiday-bg); color:var(--holiday-text);}
+  .req-cal-pair .cal-cell.in-range{background:var(--vacation-dim); color:var(--vacation);}
+  .req-cal-pair .cal-cell.range-edge{background:var(--vacation); color:#0F1C30; font-weight:700;}
+  .req-cal-pair .cal-cell.single-pick{background:var(--birthday); color:#0F1C30; font-weight:700;}
+  .req-cal-pair .cal-cell.today{border:1px solid var(--text);}
+
+  nav.tabbar{
+    position:fixed; bottom:0; left:0; right:0;
+    background:#0D1828F0; backdrop-filter:blur(8px);
+    border-top:1px solid var(--border);
+    display:flex; padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    z-index:30;
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; color:var(--text-muted);
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:6px 2px; font-size:10px; font-family:'Inter',sans-serif; font-weight:500;
+    border-radius:10px;
+  }
+  nav.tabbar button.active{color:var(--vacation); background:var(--surface);}
+  nav.tabbar button svg{width:19px; height:19px;}
+
+  .fab-space{height:6px;}
+  .modal-bg{
+    position:fixed; inset:0; background:#0008; z-index:40; display:none;
+    align-items:flex-end; justify-content:center;
+  }
+  .modal-bg.active{display:flex;}
+  .modal{
+    background:var(--surface); border-top:1px solid var(--border);
+    border-radius:18px 18px 0 0; padding:18px; width:100%; max-width:640px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .modal h3{font-family:'Fraunces',serif; margin:0 0 14px;}
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 16px; border-radius:20px; font-size:13px; z-index:50;
+    opacity:0; transition:opacity .25s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .loading{text-align:center; color:var(--text-muted); font-size:13px; padding:20px;}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="eyebrow">JDB CONTABILIDADE</div>
+  <h1 id="screenTitle">Controle de Férias</h1>
+</header>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <div class="screen active" id="screen-dashboard">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="num" id="statEmployees">0</div>
+        <div class="label">funcionários cadastrados</div>
+      </div>
+      <div class="stat-card">
+        <div class="num" id="statPending">0</div>
+        <div class="label">solicitações pendentes</div>
+      </div>
+    </div>
+
+    <section class="block" id="alertsBlock" style="display:none;">
+      <h3>⚠️ Férias vencendo / vencidas</h3>
+      <div class="card-list" id="alertsList"></div>
+    </section>
+
+    <section class="block">
+      <h3>Próximos aniversários</h3>
+      <div class="card-list" id="upcomingBirthdays"></div>
+    </section>
+
+    <section class="block">
+      <h3>Pendentes de aprovação</h3>
+      <div class="card-list" id="pendingList"></div>
+    </section>
+  </div>
+
+  <!-- FUNCIONÁRIOS -->
+  <div class="screen" id="screen-team">
+    <button class="btn-primary" onclick="openEmployeeModal()">+ Adicionar funcionário</button>
+    <div class="fab-space"></div>
+    <section class="block" style="margin-top:16px;">
+      <div class="card-list" id="teamList"></div>
+    </section>
+  </div>
+
+  <!-- SOLICITAÇÕES -->
+  <div class="screen" id="screen-requests">
+    <form class="panel" id="requestForm">
+      <div class="type-toggle" id="typeToggle">
+        <button type="button" class="active" data-type="ferias">🏖 Férias</button>
+        <button type="button" data-type="aniversario">🎂 Aniversário</button>
+      </div>
+      <div class="field">
+        <label>Funcionário</label>
+        <select id="reqEmployee"></select>
+      </div>
+
+      <div class="field-label-row">
+        <label id="reqDateSummaryLabel">Toque nos dias para escolher o período</label>
+      </div>
+      <div class="req-selection" id="reqSelectionDisplay"></div>
+
+      <div class="req-cal-nav">
+        <button type="button" id="reqCalPrev">‹</button>
+        <span id="reqCalRangeLabel"></span>
+        <button type="button" id="reqCalNext">›</button>
+      </div>
+      <div class="cal-pair req-cal-pair" id="reqCalPair"></div>
+
+      <div class="hint" id="reqHint">30 dias corridos por ciclo de 12 meses trabalhados (CLT).</div>
+      <div class="field">
+        <label>Observação (opcional)</label>
+        <input type="text" id="reqNote" placeholder="Ex: dividir em dois períodos">
+      </div>
+      <button type="submit" class="btn-primary" id="reqSubmitBtn">Enviar solicitação</button>
+    </form>
+
+    <section class="block">
+      <h3>Histórico</h3>
+      <div class="card-list" id="requestsList"></div>
+    </section>
+  </div>
+
+  <!-- CALENDÁRIO -->
+  <div class="screen" id="screen-calendar">
+    <div class="cal-nav-row">
+      <button class="cal-nav-btn" onclick="calShift(-1)">‹ Mês anterior</button>
+      <button class="cal-nav-btn" onclick="calShift(1)">Próximo mês ›</button>
+    </div>
+    <div class="cal-pair" id="calPair"></div>
+    <div class="legend">
+      <span><i style="background:var(--vacation)"></i>Férias aprovadas</span>
+      <span><i style="background:var(--birthday)"></i>Folga aniversário</span>
+      <span><i style="background:var(--weekend-bg)"></i>Sábado / Domingo</span>
+      <span><i style="background:var(--holiday-bg)"></i>Feriado nacional</span>
+    </div>
+  </div>
+
+  <!-- RELATÓRIOS -->
+  <div class="screen" id="screen-reports">
+    <section class="block">
+      <h3>Exportar dados (CSV)</h3>
+      <div class="card-list">
+        <div class="item" onclick="exportEmployeesCSV()" style="cursor:pointer;">
+          <div class="avatar">👥</div>
+          <div class="info">
+            <div class="name">Funcionários</div>
+            <div class="sub">Nome, nascimento, admissão, saldo de férias</div>
+          </div>
+          <span class="badge aprovado">.csv</span>
+        </div>
+        <div class="item" onclick="exportRequestsCSV('all')" style="cursor:pointer;">
+          <div class="avatar">📋</div>
+          <div class="info">
+            <div class="name">Todas as solicitações</div>
+            <div class="sub">Férias e folgas de aniversário, todos os status</div>
+          </div>
+          <span class="badge aprovado">.csv</span>
+        </div>
+        <div class="item" onclick="exportRequestsCSV('aprovado')" style="cursor:pointer;">
+          <div class="avatar">✅</div>
+          <div class="info">
+            <div class="name">Somente aprovadas</div>
+            <div class="sub">Útil para enviar ao financeiro/folha de pagamento</div>
+          </div>
+          <span class="badge aprovado">.csv</span>
+        </div>
+        <div class="item" onclick="exportRequestsCSV('pendente')" style="cursor:pointer;">
+          <div class="avatar">⏳</div>
+          <div class="info">
+            <div class="name">Somente pendentes</div>
+            <div class="sub">Fila de aprovação atual</div>
+          </div>
+          <span class="badge aprovado">.csv</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3>Resumo por período</h3>
+      <div class="panel" style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px;">
+        <div class="row2">
+          <div class="field">
+            <label>De</label>
+            <input type="date" id="reportFrom">
+          </div>
+          <div class="field">
+            <label>Até</label>
+            <input type="date" id="reportTo">
+          </div>
+        </div>
+        <button class="btn-primary" onclick="exportPeriodCSV()">Exportar período</button>
+      </div>
+    </section>
+  </div>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-screen="dashboard" onclick="showScreen('dashboard')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+    Painel
+  </button>
+  <button class="tab-btn" data-screen="team" onclick="showScreen('team')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.5 2.5-6 5.5-6s5.5 2.5 5.5 6"/><circle cx="17" cy="8.5" r="2.4"/><path d="M15.5 12.3c2.3.3 4 2.4 4 5.2"/></svg>
+    Equipe
+  </button>
+  <button class="tab-btn" data-screen="requests" onclick="showScreen('requests')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8 13h8M8 17h5"/></svg>
+    Solicitações
+  </button>
+  <button class="tab-btn" data-screen="calendar" onclick="showScreen('calendar')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>
+    Calendário
+  </button>
+  <button class="tab-btn" data-screen="reports" onclick="showScreen('reports')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>
+    Relatórios
+  </button>
+</nav>
+
+<div class="modal-bg" id="employeeModalBg">
+  <div class="modal">
+    <h3>Novo funcionário</h3>
+    <form id="employeeForm" onsubmit="submitEmployee(event)">
+      <div class="field">
+        <label>Nome completo</label>
+        <input type="text" id="empName" required placeholder="Ex: Ana Souza">
+      </div>
+      <div class="field">
+        <label>Cargo (opcional)</label>
+        <input type="text" id="empCargo" placeholder="Ex: Analista Fiscal">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Data de nascimento</label>
+          <input type="date" id="empBirth" required>
+        </div>
+        <div class="field">
+          <label>Data de admissão</label>
+          <input type="date" id="empAdmission" required>
+        </div>
+      </div>
+      <div class="row2" style="margin-top:6px;">
+        <button type="button" class="btn-ghost" onclick="closeEmployeeModal()">Cancelar</button>
+        <button type="submit" class="btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- Blindagem contra objetos não serializáveis (ex.: Headers do fetch) ----------
+// O preview de artifacts intercepta console.error/warn e erros não tratados para
+// exibi-los no chat via postMessage. Objetos como Headers/Response não podem ser
+// clonados nesse processo e quebram a mensagem real. Aqui a gente sanitiza tudo
+// antes de deixar passar, e evita que erros de rede assíncronos "vazem" sem tratamento.
+(function(){
+  function safeArg(a){
+    if(a instanceof Error) return a.message || String(a);
+    if(a && typeof a === 'object'){
+      try{ return JSON.parse(JSON.stringify(a)); }catch(_){ return String(a); }
+    }
+    return a;
+  }
+  const origError = console.error ? console.error.bind(console) : function(){};
+  const origWarn = console.warn ? console.warn.bind(console) : function(){};
+  console.error = function(...args){ try{ origError(...args.map(safeArg)); }catch(_){} };
+  console.warn = function(...args){ try{ origWarn(...args.map(safeArg)); }catch(_){} };
+
+  window.addEventListener('unhandledrejection', function(ev){
+    try{
+      const reason = ev.reason;
+      const msg = (reason && (reason.message || String(reason))) || 'Erro assíncrono não tratado';
+      console.error('Promessa não tratada:', msg);
+    }catch(_){}
+    ev.preventDefault();
+  });
+})();
+
+const MONTHS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const DOW = ['D','S','T','Q','Q','S','S'];
+
+const holidaysCache = {};
+
+function addDays(date, n){
+  const d = new Date(date);
+  d.setDate(d.getDate()+n);
+  return d;
+}
+function fmtISOFromDate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+// Algoritmo de Meeus/Jones/Butcher para calcular o domingo de Páscoa
+function easterDate(year){
+  const a = year % 19;
+  const b = Math.floor(year/100);
+  const c = year % 100;
+  const d = Math.floor(b/4);
+  const e = b % 4;
+  const f = Math.floor((b+8)/25);
+  const g = Math.floor((b-f+1)/3);
+  const h = (19*a + b - d - g + 15) % 30;
+  const i = Math.floor(c/4);
+  const k = c % 4;
+  const l = (32 + 2*e + 2*i - h - k) % 7;
+  const m = Math.floor((a + 11*h + 22*l)/451);
+  const month = Math.floor((h + l - 7*m + 114)/31);
+  const day = ((h + l - 7*m + 114) % 31) + 1;
+  return new Date(year, month-1, day);
+}
+// Feriados nacionais brasileiros (fixos + móveis calculados a partir da Páscoa)
+function computeHolidays(year){
+  const easter = easterDate(year);
+  const carnavalTue = fmtISOFromDate(addDays(easter, -47));
+  const carnavalMon = fmtISOFromDate(addDays(easter, -48));
+  const goodFriday = fmtISOFromDate(addDays(easter, -2));
+  const corpusChristi = fmtISOFromDate(addDays(easter, 60));
+  return [
+    {date:`${year}-01-01`, name:'Confraternização Universal'},
+    {date:carnavalMon, name:'Carnaval'},
+    {date:carnavalTue, name:'Carnaval'},
+    {date:goodFriday, name:'Sexta-feira Santa'},
+    {date:`${year}-04-21`, name:'Tiradentes'},
+    {date:`${year}-05-01`, name:'Dia do Trabalho'},
+    {date:corpusChristi, name:'Corpus Christi'},
+    {date:`${year}-08-09`, name:'Feriado Municipal'},
+    {date:`${year}-09-07`, name:'Independência do Brasil'},
+    {date:`${year}-09-20`, name:'Revolução Farroupilha (RS)'},
+    {date:`${year}-10-12`, name:'Nossa Senhora Aparecida'},
+    {date:`${year}-11-02`, name:'Finados'},
+    {date:`${year}-11-15`, name:'Proclamação da República'},
+    {date:`${year}-11-20`, name:'Consciência Negra'},
+    {date:`${year}-12-25`, name:'Natal'},
+    {date:`${year}-12-31`, name:'Feriado Municipal'}
+  ];
+}
+function holidayName(dateStr){
+  const year = parseInt(dateStr.slice(0,4), 10);
+  if(!holidaysCache[year]) holidaysCache[year] = computeHolidays(year);
+  const found = holidaysCache[year].find(h=>h.date===dateStr);
+  return found ? found.name : null;
+}
+function isWeekend(year, month, day){
+  const dow = new Date(year, month, day).getDay();
+  return dow===0 || dow===6;
+}
+
+let employees = [];
+let requests = [];
+let reqType = 'ferias';
+let calDate = new Date();
+let reqCalDate = new Date();
+let reqSelStart = null;
+let reqSelEnd = null;
+
+// ---------- Conexão com Supabase ----------
+const SUPABASE_URL = 'https://gnnqqpdzrhkltdjigoym.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ssXdXCNklK8McHGap3g0iQ_HwI2TAf8';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function rowToEmployee(row){
+  return {id: row.id, nome: row.nome, cargo: row.cargo || '', nascimento: row.nascimento, admissao: row.admissao, ativo: row.ativo !== false};
+}
+function rowToRequest(row){
+  return {id: row.id, employeeId: row.employee_id, type: row.type, start: row.start_date, end: row.end_date, note: row.note || '', status: row.status, createdAt: row.created_at};
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  const duration = msg.length > 40 ? 6000 : 2200;
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(()=>t.classList.remove('show'), duration);
+}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+const ACTIVE_NAMES = [
+  "Francieli da Silveira Pereira Nunes",
+  "Vinícios Milani Wolff",
+  "Jordana Pozzer",
+  "Camila Zanin",
+  "Jennefer Paola Nunes Daniel",
+  "Maria Isabel Colombelli",
+  "Gabriela Basso Albrecht"
+];
+
+const DEFAULT_EMPLOYEES = [
+  {nome:"Eduarda Lanfredi Della Vechia", cargo:"Analista de Departamento Pessoal", admissao:"2023-04-24", nascimento:"2004-11-25"},
+  {nome:"Anelize Favretto", cargo:"Analista de Departamento Pessoal", admissao:"2024-11-01", nascimento:"1987-08-05"},
+  {nome:"Tobias Rodrigues Souza", cargo:"Analista de Departamento Pessoal", admissao:"2025-06-17", nascimento:"1999-10-18"},
+  {nome:"Daniela Dametto Brunello", cargo:"Analista de Departamento Pessoal", admissao:"2026-03-02", nascimento:"1985-08-13"},
+  {nome:"Guilherme Giacobbo Berlando", cargo:"Analista Fiscal", admissao:"2019-07-01", nascimento:"2001-03-13"},
+  {nome:"Denise Bernart", cargo:"Analista Fiscal", admissao:"2021-05-03", nascimento:"1987-02-05"},
+  {nome:"Catia Agnoletto Ferronato", cargo:"Analista Fiscal", admissao:"2022-11-01", nascimento:"1982-04-24"},
+  {nome:"Marina Bacega Dalmina Bezutti", cargo:"Analista Fiscal", admissao:"2023-04-17", nascimento:"1998-09-19"},
+  {nome:"Maria Adelaide Biasotto", cargo:"Analista Fiscal", admissao:"2024-05-13", nascimento:"1990-12-17"},
+  {nome:"Marta Vieira", cargo:"Analista Fiscal", admissao:"2024-11-04", nascimento:"2002-01-11"},
+  {nome:"Paulo Ricardo Rosa Severo", cargo:"Analista Fiscal", admissao:"2025-04-28", nascimento:"1983-01-22"},
+  {nome:"Ana Carla Alves Machado", cargo:"Analista Fiscal", admissao:"2026-02-02", nascimento:"1990-12-18"},
+  {nome:"Cristiane Panisson Cecchin", cargo:"Analista Fiscal", admissao:"2026-03-02", nascimento:"1991-11-07"},
+  {nome:"Cristiane Costella Bugone", cargo:"Analista Fiscal", admissao:"2026-08-03", nascimento:"1992-01-23"},
+  {nome:"Patricia Zanatta", cargo:"Auxiliar Administrativo", admissao:"2022-09-01", nascimento:"1994-10-10"},
+  {nome:"Gabrieli Marcon", cargo:"Auxiliar Administrativo", admissao:"2023-08-14", nascimento:"1999-09-08"},
+  {nome:"Erica Paviani", cargo:"Auxiliar Administrativo", admissao:"2024-08-21", nascimento:"2000-03-22"},
+  {nome:"Alice Mazzutti", cargo:"Auxiliar Administrativo", admissao:"2024-11-05", nascimento:"2003-09-30"},
+  {nome:"Gienifer Mioto", cargo:"Auxiliar Administrativo", admissao:"2026-02-02", nascimento:"2005-08-12"},
+  {nome:"Vinícios Milani Wolff", cargo:"Auxiliar Contábil", admissao:"2022-12-01", nascimento:"2003-12-26"},
+  {nome:"Camila Zanin", cargo:"Auxiliar Contábil", admissao:"2023-10-02", nascimento:"2000-11-01"},
+  {nome:"Jordana Pozzer", cargo:"Auxiliar Contábil", admissao:"2023-10-10", nascimento:"2001-10-29"},
+  {nome:"Jennefer Paola Nunes Daniel", cargo:"Auxiliar Contábil", admissao:"2026-04-06", nascimento:"2004-12-21"},
+  {nome:"Maria Isabel Colombelli", cargo:"Auxiliar Contábil", admissao:"2026-07-20", nascimento:"2007-06-27"},
+  {nome:"Gabriela Basso Albrecht", cargo:"Auxiliar Contábil", admissao:"2026-08-17", nascimento:"2000-12-29"},
+  {nome:"Marcelo Negrini", cargo:"Auxiliar de Contabilidade", admissao:"2020-01-22", nascimento:"1988-02-11"},
+  {nome:"Karol Rodigueiro", cargo:"Auxiliar de Departamento Pessoal", admissao:"2025-03-12", nascimento:"2004-07-29"},
+  {nome:"Francieli da Silveira Pereira Nunes", cargo:"Coordenador(a) de Implantações e Processos", admissao:"2019-07-01", nascimento:"1997-02-17"},
+  {nome:"Moacir Vanderlei Gomes Grigollo", cargo:"Coordenador de Departamento Fiscal", admissao:"2016-04-01", nascimento:"1994-06-16"},
+  {nome:"Luana Terezinha Gritti", cargo:"Coordenador de Departamento Fiscal", admissao:"2019-03-13", nascimento:"1996-06-08"},
+  {nome:"Laura Grizon Pina", cargo:"Coordenadora de Departamento Pessoal", admissao:"2022-03-01", nascimento:"2000-02-25"},
+  {nome:"Caroline do Prado Colussi", cargo:"Gerente de Contabilidade", admissao:"2017-01-02", nascimento:"1986-10-31"},
+  {nome:"Eduardo Paulo Bruzamarelo", cargo:"Office Boy", admissao:"2024-02-19", nascimento:"2006-03-19"}
+];
+
+function describeError(err){
+  if(!err) return 'Erro desconhecido';
+  if(typeof err === 'string') return err;
+  if(err.message) return err.message;
+  if(err.error_description) return err.error_description;
+  if(err.hint) return err.hint;
+  if(err.details) return err.details;
+  if(err.code) return String(err.code);
+  try{ return JSON.stringify(err); }catch(_){ return 'Erro sem detalhes (veja o console do navegador)'; }
+}
+
+async function loadData(){
+  try{
+    const {data, error} = await db.from('employees').select('*').order('created_at', {ascending:true});
+    if(error) throw error;
+    employees = (data || []).map(rowToEmployee);
+  }catch(err){
+    const msg = describeError(err);
+    console.error('Erro ao carregar funcionários do Supabase:', msg);
+    toast('Erro no banco: ' + msg);
+    employees = [];
+  }
+  try{
+    const {data, error} = await db.from('requests').select('*').order('created_at', {ascending:false});
+    if(error) throw error;
+    requests = (data || []).map(rowToRequest);
+  }catch(err){
+    const msg = describeError(err);
+    console.error('Erro ao carregar solicitações do Supabase:', msg);
+    requests = [];
+  }
+
+  // Semeia a base com a relação de empregados da JDB Contabilidade
+  // apenas se a tabela ainda estiver vazia.
+  if(employees.length === 0 && DEFAULT_EMPLOYEES.length > 0){
+    const seedRows = DEFAULT_EMPLOYEES.map(e => ({
+      id: uid(),
+      nome: e.nome,
+      cargo: e.cargo,
+      nascimento: e.nascimento,
+      admissao: e.admissao,
+      ativo: ACTIVE_NAMES.includes(e.nome)
+    }));
+    const {error} = await db.from('employees').insert(
+      seedRows.map(r=>({id:r.id, nome:r.nome, cargo:r.cargo, nascimento:r.nascimento, admissao:r.admissao, ativo:r.ativo}))
+    );
+    if(error){
+      const msg = describeError(error);
+      console.error('Erro ao semear funcionários:', msg);
+      toast('Erro ao semear: ' + msg);
+    } else {
+      employees = seedRows;
+      toast('Base de funcionários carregada');
+    }
+  }
+
+  renderAll();
+}
+
+async function insertEmployeeRow(emp){
+  const {error} = await db.from('employees').insert({
+    id: emp.id, nome: emp.nome, cargo: emp.cargo, nascimento: emp.nascimento, admissao: emp.admissao, ativo: emp.ativo
+  });
+  if(error){ console.error('Erro ao salvar funcionário:', describeError(error)); toast('Erro ao salvar funcionário: ' + describeError(error)); }
+  return !error;
+}
+async function updateEmployeeRow(id, fields){
+  const {error} = await db.from('employees').update(fields).eq('id', id);
+  if(error){ console.error('Erro ao atualizar funcionário:', describeError(error)); toast('Erro ao atualizar funcionário: ' + describeError(error)); }
+  return !error;
+}
+async function deleteEmployeeRow(id){
+  const {error} = await db.from('employees').delete().eq('id', id);
+  if(error){ console.error('Erro ao remover funcionário:', describeError(error)); toast('Erro ao remover funcionário: ' + describeError(error)); }
+  return !error;
+}
+async function insertRequestRow(r){
+  const {error} = await db.from('requests').insert({
+    id: r.id, employee_id: r.employeeId, type: r.type, start_date: r.start, end_date: r.end, note: r.note, status: r.status
+  });
+  if(error){ console.error('Erro ao salvar solicitação:', describeError(error)); toast('Erro ao salvar solicitação: ' + describeError(error)); }
+  return !error;
+}
+async function updateRequestRow(id, fields){
+  const {error} = await db.from('requests').update(fields).eq('id', id);
+  if(error){ console.error('Erro ao atualizar solicitação:', describeError(error)); toast('Erro ao atualizar solicitação: ' + describeError(error)); }
+  return !error;
+}
+async function deleteRequestRow(id){
+  const {error} = await db.from('requests').delete().eq('id', id);
+  if(error){ console.error('Erro ao remover solicitação:', describeError(error)); toast('Erro ao remover solicitação: ' + describeError(error)); }
+  return !error;
+}
+
+function initials(name){
+  return name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+}
+
+function fmtDate(d){
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+function fmtShort(d){
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'short'});
+}
+
+function daysBetween(a,b){
+  const A = new Date(a+'T00:00:00'), B = new Date(b+'T00:00:00');
+  return Math.round((B-A)/86400000) + 1;
+}
+
+function monthsSince(dateStr){
+  const start = new Date(dateStr+'T00:00:00');
+  const now = new Date();
+  let months = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth());
+  if(now.getDate() < start.getDate()) months--;
+  return Math.max(0, months);
+}
+
+function vacationBalance(emp){
+  const months = monthsSince(emp.admissao);
+  const cyclesCompleted = Math.floor(months/12);
+  const availableFromCycles = cyclesCompleted * 30;
+  const monthsIntoCurrentCycle = months % 12;
+  const accrualCurrentCycle = Math.floor((monthsIntoCurrentCycle/12)*30);
+  const taken = requests
+    .filter(r=>r.employeeId===emp.id && r.type==='ferias' && r.status==='aprovado')
+    .reduce((sum,r)=>sum + daysBetween(r.start, r.end), 0);
+  // soma o acúmulo de ciclos completos + o proporcional do ciclo em andamento.
+  // não limita em zero: saldo negativo indica férias tiradas por antecipação,
+  // que serão descontadas do próximo ciclo.
+  const totalAccrued = availableFromCycles + accrualCurrentCycle;
+  return totalAccrued - taken;
+}
+
+function addMonths(dateStr, n){
+  const d = new Date(dateStr+'T00:00:00');
+  d.setMonth(d.getMonth()+n);
+  return d;
+}
+
+// Retorna o status do ciclo de férias mais antigo ainda não totalmente utilizado.
+// CLT: 12 meses para adquirir o direito + 12 meses para gozar (período concessivo).
+// Depois disso, as férias vencem e devem ser pagas em dobro.
+function vacationDeadlineStatus(emp){
+  const months = monthsSince(emp.admissao);
+  const completedCycles = Math.floor(months/12);
+  if(completedCycles===0) return {status:'ok'};
+
+  let takenDays = requests
+    .filter(r=>r.employeeId===emp.id && r.type==='ferias' && r.status==='aprovado')
+    .reduce((sum,r)=>sum + daysBetween(r.start, r.end), 0);
+
+  let oldestUnusedCycle = null;
+  for(let i=0; i<completedCycles; i++){
+    if(takenDays >= 30){ takenDays -= 30; continue; }
+    oldestUnusedCycle = i;
+    break;
+  }
+  if(oldestUnusedCycle===null) return {status:'ok'};
+
+  const deadline = addMonths(emp.admissao, (oldestUnusedCycle+2)*12);
+  const now = new Date(new Date().toDateString());
+  const daysLeft = Math.round((deadline - now)/86400000);
+
+  if(daysLeft < 0) return {status:'vencida', deadline, daysLeft};
+  if(daysLeft <= 90) return {status:'vencendo', deadline, daysLeft};
+  return {status:'ok', deadline, daysLeft};
+}
+
+function nextBirthday(emp){
+  const now = new Date();
+  const b = new Date(emp.nascimento+'T00:00:00');
+  let next = new Date(now.getFullYear(), b.getMonth(), b.getDate());
+  if(next < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+    next = new Date(now.getFullYear()+1, b.getMonth(), b.getDate());
+  }
+  return next;
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.screen===name));
+  const titles = {dashboard:'Controle de Férias', team:'Equipe', requests:'Solicitações', calendar:'Calendário', reports:'Relatórios'};
+  document.getElementById('screenTitle').textContent = titles[name];
+  if(name==='calendar') renderCalendar();
+}
+
+function openEmployeeModal(){
+  document.getElementById('employeeForm').reset();
+  document.getElementById('employeeModalBg').classList.add('active');
+}
+function closeEmployeeModal(){
+  document.getElementById('employeeModalBg').classList.remove('active');
+}
+
+async function submitEmployee(ev){
+  ev.preventDefault();
+  const name = document.getElementById('empName').value.trim();
+  const cargo = document.getElementById('empCargo').value.trim();
+  const birth = document.getElementById('empBirth').value;
+  const admission = document.getElementById('empAdmission').value;
+  if(!name || !birth || !admission) return;
+  const newEmp = {id: uid(), nome: name, cargo: cargo, nascimento: birth, admissao: admission, ativo: true};
+  const ok = await insertEmployeeRow(newEmp);
+  if(ok){
+    employees.push(newEmp);
+    closeEmployeeModal();
+    toast('Funcionário adicionado');
+    renderAll();
+  }
+}
+
+function activeEmployees(){
+  return employees.filter(e=>e.ativo!==false);
+}
+
+async function toggleActive(id){
+  const e = employees.find(x=>x.id===id);
+  if(!e) return;
+  const novoStatus = !(e.ativo!==false);
+  const ok = await updateEmployeeRow(id, {ativo: novoStatus});
+  if(ok){
+    e.ativo = novoStatus;
+    toast(e.ativo ? 'Funcionário reativado' : 'Funcionário marcado como inativo');
+    renderAll();
+  }
+}
+
+async function removeEmployee(id){
+  if(!confirm('Remover este funcionário e suas solicitações?')) return;
+  const ok = await deleteEmployeeRow(id);
+  if(ok){
+    employees = employees.filter(e=>e.id!==id);
+    requests = requests.filter(r=>r.employeeId!==id); // cascade no banco já cuida disso
+    renderAll();
+  }
+}
+
+function setReqType(type){
+  reqType = type;
+  document.querySelectorAll('.type-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===type));
+  const hint = document.getElementById('reqHint');
+  const summaryLabel = document.getElementById('reqDateSummaryLabel');
+  reqSelStart = null;
+  reqSelEnd = null;
+  if(type==='ferias'){
+    summaryLabel.textContent = 'Toque no dia de início e depois no dia de fim';
+    hint.textContent = '30 dias por ciclo de 12 meses (CLT). Podem ser fracionadas em até 3 períodos: um de no mínimo 14 dias e os demais com pelo menos 5 dias cada. Basta enviar uma solicitação por período.';
+  } else {
+    summaryLabel.textContent = 'Toque no dia da folga de aniversário';
+    hint.textContent = 'A folga de aniversário é 1 dia, sugerida em até 30 dias antes ou depois da data de nascimento.';
+  }
+  renderReqSelectionDisplay();
+  renderReqCalendar();
+}
+
+function renderReqSelectionDisplay(){
+  const el = document.getElementById('reqSelectionDisplay');
+  if(reqType==='aniversario'){
+    el.innerHTML = `<span class="sel-pill ${reqSelStart?'filled':''}">${reqSelStart ? fmtShort(reqSelStart) : 'Data não selecionada'}</span>`;
+    return;
+  }
+  const startTxt = reqSelStart ? fmtShort(reqSelStart) : 'Início';
+  const endTxt = reqSelEnd ? fmtShort(reqSelEnd) : (reqSelStart ? 'Toque no dia final' : 'Fim');
+  const daysTxt = (reqSelStart && reqSelEnd) ? ` · ${daysBetween(reqSelStart, reqSelEnd)} dias` : '';
+  el.innerHTML = `<span class="sel-pill ${reqSelStart?'filled':''}">${startTxt}</span>
+    <span class="sel-pill ${reqSelEnd?'filled':''}">${endTxt}</span>${daysTxt ? `<span class="sel-pill filled">${daysTxt.replace(' · ','')}</span>` : ''}`;
+}
+
+function reqCalShift(delta){
+  reqCalDate = new Date(reqCalDate.getFullYear(), reqCalDate.getMonth()+delta, 1);
+  renderReqCalendar();
+}
+
+function pickReqDate(dateStr){
+  if(reqType==='aniversario'){
+    reqSelStart = dateStr;
+    reqSelEnd = dateStr;
+  } else {
+    if(!reqSelStart || (reqSelStart && reqSelEnd)){
+      reqSelStart = dateStr;
+      reqSelEnd = null;
+    } else if(dateStr < reqSelStart){
+      reqSelStart = dateStr;
+      reqSelEnd = null;
+    } else {
+      reqSelEnd = dateStr;
+    }
+  }
+  renderReqSelectionDisplay();
+  renderReqCalendar();
+}
+
+function buildReqMonthGridHTML(year, month){
+  const now = new Date();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  let dow = DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  let cells = '';
+  for(let i=0;i<firstDay;i++) cells += '<div class="cal-cell blank"></div>';
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = year===now.getFullYear() && month===now.getMonth() && d===now.getDate();
+    const hName = holidayName(dateStr);
+    let cls = 'cal-cell';
+    if(isToday) cls += ' today';
+    if(hName) cls += ' holiday';
+    else if(isWeekend(year, month, d)) cls += ' weekend';
+    if(reqType==='aniversario' && reqSelStart===dateStr){
+      cls += ' single-pick';
+    } else if(reqType==='ferias'){
+      if(dateStr===reqSelStart || dateStr===reqSelEnd) cls += ' range-edge';
+      else if(reqSelStart && reqSelEnd && dateStr>reqSelStart && dateStr<reqSelEnd) cls += ' in-range';
+    }
+    cells += `<div class="${cls}" data-date="${dateStr}"${hName?` title="${hName}"`:''}><span>${d}</span></div>`;
+  }
+  return `<div class="cal-month">
+    <h3>${MONTHS[month]} ${year}</h3>
+    <div class="cal-grid">${dow}</div>
+    <div class="cal-grid" style="margin-top:4px;">${cells}</div>
+  </div>`;
+}
+
+function renderReqCalendar(){
+  const pair = document.getElementById('reqCalPair');
+  if(!pair) return;
+  const y1 = reqCalDate.getFullYear(), m1 = reqCalDate.getMonth();
+  const nextDate = new Date(y1, m1+1, 1);
+  const y2 = nextDate.getFullYear(), m2 = nextDate.getMonth();
+  pair.innerHTML = buildReqMonthGridHTML(y1, m1) + buildReqMonthGridHTML(y2, m2);
+  document.getElementById('reqCalRangeLabel').textContent = `${MONTHS[m1]} / ${MONTHS[m2]}`;
+}
+
+async function submitRequest(ev){
+  ev.preventDefault();
+  const employeeId = document.getElementById('reqEmployee').value;
+  const start = reqSelStart;
+  const end = reqType==='ferias' ? reqSelEnd : reqSelStart;
+  const note = document.getElementById('reqNote').value.trim();
+  if(!employeeId){ toast('Selecione o funcionário'); return; }
+  if(!start || (reqType==='ferias' && !end)){ toast('Selecione as datas no calendário'); return; }
+
+  let warnMsg = '';
+  if(reqType==='ferias'){
+    const periodDays = daysBetween(start, end);
+    const existingPeriods = requests.filter(r=>
+      r.employeeId===employeeId && r.type==='ferias' && (r.status==='aprovado' || r.status==='pendente')
+    ).length;
+    if(periodDays < 5){
+      warnMsg = 'Enviado — atenção: CLT exige pelo menos 5 dias por período fracionado';
+    } else if(existingPeriods >= 3){
+      warnMsg = 'Enviado — atenção: esse já seria o 4º período (CLT permite no máx. 3)';
+    }
+  }
+
+  const newReq = {
+    id: uid(),
+    employeeId,
+    type: reqType,
+    start,
+    end,
+    note,
+    status: 'pendente',
+    createdAt: new Date().toISOString()
+  };
+  const ok = await insertRequestRow(newReq);
+  if(ok){
+    requests.unshift(newReq);
+    document.getElementById('requestForm').reset();
+    setReqType('ferias');
+    toast(warnMsg || 'Solicitação enviada');
+    renderAll();
+  }
+}
+
+async function updateStatus(id, status){
+  const r = requests.find(x=>x.id===id);
+  if(!r) return;
+  const ok = await updateRequestRow(id, {status});
+  if(!ok) return;
+  r.status = status;
+  if(status==='aprovado'){
+    const emp = employees.find(e=>e.id===r.employeeId);
+    if(emp && r.type==='ferias'){
+      const bal = vacationBalance(emp);
+      if(bal < 0){
+        toast(`Aprovado — atenção: saldo ficou em ${bal} dias (antecipação)`);
+        renderAll();
+        return;
+      }
+    }
+  }
+  toast(status==='aprovado' ? 'Solicitação aprovada' : 'Solicitação negada');
+  renderAll();
+}
+
+async function deleteRequest(id){
+  const ok = await deleteRequestRow(id);
+  if(ok){
+    requests = requests.filter(r=>r.id!==id);
+    renderAll();
+  }
+}
+
+function buildMonthGridHTML(year, month){
+  const now = new Date();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  let dow = DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  let cells = '';
+  for(let i=0;i<firstDay;i++) cells += '<div class="cal-cell blank"></div>';
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = year===now.getFullYear() && month===now.getMonth() && d===now.getDate();
+    const hName = holidayName(dateStr);
+    let cls = 'cal-cell';
+    if(isToday) cls += ' today';
+    if(hName) cls += ' holiday';
+    else if(isWeekend(year, month, d)) cls += ' weekend';
+    const vac = requests.some(r=>r.type==='ferias' && r.status==='aprovado' && dateStr>=r.start && dateStr<=r.end);
+    const bday = requests.some(r=>r.type==='aniversario' && r.status==='aprovado' && dateStr===r.start);
+    let dots = '';
+    if(vac) dots += `<span style="background:var(--vacation)"></span>`;
+    if(bday) dots += `<span style="background:var(--birthday)"></span>`;
+    cells += `<div class="${cls}"${hName?` title="${hName}"`:''}><span>${d}</span><div class="dots">${dots}</div></div>`;
+  }
+  return `<div class="cal-month">
+    <h3>${MONTHS[month]} ${year}</h3>
+    <div class="cal-grid">${dow}</div>
+    <div class="cal-grid" style="margin-top:4px;">${cells}</div>
+  </div>`;
+}
+
+function renderCalendar(){
+  const pair = document.getElementById('calPair');
+  const y1 = calDate.getFullYear(), m1 = calDate.getMonth();
+  const nextDate = new Date(y1, m1+1, 1);
+  const y2 = nextDate.getFullYear(), m2 = nextDate.getMonth();
+  pair.innerHTML = buildMonthGridHTML(y1, m1) + buildMonthGridHTML(y2, m2);
+}
+
+function renderStats(){
+  document.getElementById('statEmployees').textContent = activeEmployees().length;
+  document.getElementById('statPending').textContent = requests.filter(r=>r.status==='pendente').length;
+}
+
+function renderUpcomingBirthdays(){
+  const el = document.getElementById('upcomingBirthdays');
+  const active = activeEmployees();
+  if(active.length===0){ el.innerHTML = '<div class="empty">Nenhum funcionário ativo no momento.</div>'; return; }
+  const upcoming = active
+    .map(e=>({e, next: nextBirthday(e)}))
+    .sort((a,b)=>a.next-b.next)
+    .slice(0,5);
+  el.innerHTML = upcoming.map(({e,next})=>{
+    const days = Math.round((next - new Date(new Date().toDateString()))/86400000);
+    return `<div class="item">
+      <div class="avatar">${initials(e.nome)}</div>
+      <div class="info">
+        <div class="name">${e.nome}</div>
+        <div class="sub">${next.toLocaleDateString('pt-BR',{day:'2-digit',month:'long'})} · ${days===0?'hoje':days+' dias'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderPendingList(){
+  const el = document.getElementById('pendingList');
+  const pending = requests.filter(r=>r.status==='pendente');
+  if(pending.length===0){ el.innerHTML = '<div class="empty">Sem solicitações pendentes 🎉</div>'; return; }
+  el.innerHTML = pending.map(r=>requestItemHTML(r, true)).join('');
+}
+
+function requestItemHTML(r, showActions){
+  const emp = employees.find(e=>e.id===r.employeeId);
+  const empName = emp ? emp.nome : '(removido)';
+  const label = r.type==='ferias'
+    ? `${fmtShort(r.start)} – ${fmtShort(r.end)} · ${daysBetween(r.start,r.end)} dias`
+    : `Folga de aniversário · ${fmtShort(r.start)}`;
+  const icon = r.type==='ferias' ? '🏖' : '🎂';
+  return `<div class="item">
+    <div class="avatar">${icon}</div>
+    <div class="info">
+      <div class="name">${empName}</div>
+      <div class="sub">${label}${r.note ? ' · '+r.note : ''}</div>
+    </div>
+    ${showActions
+      ? `<div style="display:flex; gap:6px;">
+          <button class="btn-approve" onclick="updateStatus('${r.id}','aprovado')">OK</button>
+          <button class="btn-deny" onclick="updateStatus('${r.id}','negado')">X</button>
+        </div>`
+      : `<span class="badge ${r.status}">${r.status}</span>`
+    }
+  </div>`;
+}
+
+function renderAlerts(){
+  const block = document.getElementById('alertsBlock');
+  const el = document.getElementById('alertsList');
+  const alerts = activeEmployees()
+    .map(e=>({e, s: vacationDeadlineStatus(e)}))
+    .filter(x=>x.s.status==='vencida' || x.s.status==='vencendo')
+    .sort((a,b)=>a.s.daysLeft - b.s.daysLeft);
+
+  if(alerts.length===0){ block.style.display='none'; return; }
+  block.style.display='block';
+  el.innerHTML = alerts.map(({e,s})=>{
+    const msg = s.status==='vencida'
+      ? `Vencidas há ${Math.abs(s.daysLeft)} dias · pagamento em dobro exigido por lei`
+      : `Prazo limite em ${s.daysLeft} dias (${s.deadline.toLocaleDateString('pt-BR')})`;
+    return `<div class="item">
+      <div class="avatar">${initials(e.nome)}</div>
+      <div class="info">
+        <div class="name">${e.nome}</div>
+        <div class="sub">${msg}</div>
+      </div>
+      <span class="badge ${s.status}">${s.status==='vencida'?'vencida':'atenção'}</span>
+    </div>`;
+  }).join('');
+}
+
+function employeeItemHTML(e, isActive){
+  const bal = vacationBalance(e);
+  const s = vacationDeadlineStatus(e);
+  const balText = bal < 0
+    ? `<span style="color:var(--birthday)">${Math.abs(bal)} dias antecipados (a descontar)</span>`
+    : `${bal} dias disponíveis`;
+  let deadlineNote = '';
+  if(s.status==='vencida') deadlineNote = ` · <span style="color:var(--danger)">férias vencidas</span>`;
+  else if(s.status==='vencendo') deadlineNote = ` · <span style="color:var(--pending)">prazo em ${s.daysLeft}d</span>`;
+  return `<div class="item" style="${isActive?'':'opacity:.55;'}">
+    <div class="avatar">${initials(e.nome)}</div>
+    <div class="info">
+      <div class="name">${e.nome}</div>
+      <div class="sub">${e.cargo ? e.cargo+' · ' : ''}Admissão ${fmtDate(e.admissao)}</div>
+      ${isActive ? `<div class="sub">${balText}${deadlineNote}</div>` : ''}
+    </div>
+    <div style="display:flex; gap:6px;">
+      <button class="btn-approve" style="${isActive?'background:var(--danger-dim);color:var(--danger);border-color:var(--danger);':''}" onclick="toggleActive('${e.id}')">${isActive?'Desativar':'Ativar'}</button>
+      <button class="btn-icon" onclick="removeEmployee('${e.id}')">✕</button>
+    </div>
+  </div>`;
+}
+
+function renderTeam(){
+  const el = document.getElementById('teamList');
+  if(employees.length===0){ el.innerHTML = '<div class="empty">Nenhum funcionário ainda. Adicione o primeiro acima.</div>'; return; }
+  const active = employees.filter(e=>e.ativo!==false);
+  const inactive = employees.filter(e=>e.ativo===false);
+  let html = '';
+  html += `<h3 style="font-family:'Fraunces',serif; font-size:14px; margin:4px 0 8px;">Ativos (${active.length})</h3>`;
+  html += active.length
+    ? active.map(e=>employeeItemHTML(e, true)).join('')
+    : '<div class="empty">Nenhum funcionário ativo.</div>';
+  if(inactive.length>0){
+    html += `<h3 style="font-family:'Fraunces',serif; font-size:14px; margin:18px 0 8px; color:var(--text-muted);">Inativos (${inactive.length})</h3>`;
+    html += inactive.map(e=>employeeItemHTML(e, false)).join('');
+  }
+  el.innerHTML = html;
+}
+
+function renderRequestEmployeeOptions(){
+  const sel = document.getElementById('reqEmployee');
+  const current = sel.value;
+  sel.innerHTML = '<option value="" disabled selected>Selecione</option>' +
+    activeEmployees().map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+  if(current) sel.value = current;
+}
+
+function renderRequestsList(){
+  const el = document.getElementById('requestsList');
+  if(requests.length===0){ el.innerHTML = '<div class="empty">Nenhuma solicitação registrada.</div>'; return; }
+  el.innerHTML = requests.map(r=>requestItemHTML(r, false)).join('');
+}
+
+function calShift(delta){
+  calDate = new Date(calDate.getFullYear(), calDate.getMonth()+delta, 1);
+  renderCalendar();
+}
+
+function renderAll(){
+  renderStats();
+  renderAlerts();
+  renderUpcomingBirthdays();
+  renderPendingList();
+  renderTeam();
+  renderRequestEmployeeOptions();
+  renderRequestsList();
+  renderReqSelectionDisplay();
+  renderReqCalendar();
+  if(document.getElementById('screen-calendar').classList.contains('active')) renderCalendar();
+}
+
+/* ---------- Relatórios / Exportação CSV ---------- */
+
+function csvEscape(val){
+  const s = String(val ?? '');
+  if(/[",\n;]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+function downloadCSV(filename, rows){
+  const BOM = '\uFEFF'; // garante acentuação correta ao abrir no Excel
+  const content = BOM + rows.map(row => row.map(csvEscape).join(';')).join('\r\n');
+  const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Relatório baixado');
+}
+
+function statusLabel(s){
+  return {pendente:'Pendente', aprovado:'Aprovado', negado:'Negado'}[s] || s;
+}
+function typeLabel(t){
+  return t==='ferias' ? 'Férias' : 'Folga de aniversário';
+}
+
+function exportEmployeesCSV(){
+  if(employees.length===0){ toast('Nenhum funcionário para exportar'); return; }
+  const rows = [['Nome','Cargo','Status','Data de nascimento','Data de admissão','Saldo de férias (dias)','Prazo status','Prazo limite']];
+  employees.forEach(e=>{
+    const s = vacationDeadlineStatus(e);
+    const bal = vacationBalance(e);
+    const balTxt = bal < 0 ? `-${Math.abs(bal)} (antecipado)` : bal;
+    const statusTxt = s.status==='vencida' ? 'Vencida' : s.status==='vencendo' ? 'Atenção' : 'Em dia';
+    const deadlineTxt = s.deadline ? s.deadline.toLocaleDateString('pt-BR') : '-';
+    rows.push([e.nome, e.cargo || '', e.ativo!==false ? 'Ativo' : 'Inativo', fmtDate(e.nascimento), fmtDate(e.admissao), balTxt, statusTxt, deadlineTxt]);
+  });
+  downloadCSV(`funcionarios_${todayStamp()}.csv`, rows);
+}
+
+function exportRequestsCSV(filter){
+  let list = requests;
+  if(filter!=='all') list = requests.filter(r=>r.status===filter);
+  if(list.length===0){ toast('Nenhuma solicitação para exportar'); return; }
+  const rows = [['Funcionário','Tipo','Início','Fim','Dias','Status','Observação','Criado em']];
+  list.forEach(r=>{
+    const emp = employees.find(e=>e.id===r.employeeId);
+    rows.push([
+      emp ? emp.nome : '(removido)',
+      typeLabel(r.type),
+      fmtDate(r.start),
+      fmtDate(r.end),
+      r.type==='ferias' ? daysBetween(r.start, r.end) : 1,
+      statusLabel(r.status),
+      r.note || '',
+      new Date(r.createdAt).toLocaleString('pt-BR')
+    ]);
+  });
+  const suffix = filter==='all' ? 'todas' : filter;
+  downloadCSV(`solicitacoes_${suffix}_${todayStamp()}.csv`, rows);
+}
+
+function exportPeriodCSV(){
+  const from = document.getElementById('reportFrom').value;
+  const to = document.getElementById('reportTo').value;
+  if(!from || !to){ toast('Selecione as duas datas'); return; }
+  const list = requests.filter(r => r.start <= to && r.end >= from);
+  if(list.length===0){ toast('Nenhuma solicitação nesse período'); return; }
+  const rows = [['Funcionário','Tipo','Início','Fim','Dias','Status','Observação']];
+  list.forEach(r=>{
+    const emp = employees.find(e=>e.id===r.employeeId);
+    rows.push([
+      emp ? emp.nome : '(removido)',
+      typeLabel(r.type),
+      fmtDate(r.start),
+      fmtDate(r.end),
+      r.type==='ferias' ? daysBetween(r.start, r.end) : 1,
+      statusLabel(r.status),
+      r.note || ''
+    ]);
+  });
+  downloadCSV(`periodo_${from}_a_${to}.csv`, rows);
+}
+
+function todayStamp(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function wireRequestFormEvents(){
+  document.getElementById('requestForm').addEventListener('submit', submitRequest);
+
+  document.getElementById('typeToggle').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-type]');
+    if(!btn) return;
+    setReqType(btn.dataset.type);
+  });
+
+  document.getElementById('reqCalPrev').addEventListener('click', ()=>reqCalShift(-1));
+  document.getElementById('reqCalNext').addEventListener('click', ()=>reqCalShift(1));
+
+  // Delegação de evento: as células do calendário são recriadas a cada render,
+  // então o listener fica no container e não precisa ser reanexado.
+  document.getElementById('reqCalPair').addEventListener('click', (e)=>{
+    const cell = e.target.closest('.cal-cell[data-date]');
+    if(!cell) return;
+    pickReqDate(cell.dataset.date);
+  });
+}
+
+wireRequestFormEvents();
+loadData();
+</script>
+</body>
+</html>
