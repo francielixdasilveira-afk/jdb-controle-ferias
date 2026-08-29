@@ -1285,12 +1285,14 @@ function renderUpcomingBirthdays(){
   const el = document.getElementById('upcomingBirthdays');
   const active = activeEmployees();
   if(active.length===0){ el.innerHTML = '<div class="empty">Nenhum funcionário ativo no momento.</div>'; return; }
+  const today = new Date(new Date().toDateString());
   const upcoming = active
     .map(e=>({e, next: nextBirthday(e)}))
-    .sort((a,b)=>a.next-b.next)
-    .slice(0,5);
-  el.innerHTML = upcoming.map(({e,next})=>{
-    const days = Math.round((next - new Date(new Date().toDateString()))/86400000);
+    .map(x=>({...x, days: Math.round((x.next - today)/86400000)}))
+    .filter(x=>x.days <= 60)
+    .sort((a,b)=>a.next-b.next);
+  if(upcoming.length===0){ el.innerHTML = '<div class="empty">Nenhum aniversário nos próximos 60 dias.</div>'; return; }
+  el.innerHTML = upcoming.map(({e,next,days})=>{
     return `<div class="item">
       <div class="avatar">${initials(e.nome)}</div>
       <div class="info">
