@@ -1061,6 +1061,17 @@ function renderReqCalendar(){
   document.getElementById('reqCalRangeLabel').textContent = `${MONTHS[m1]} / ${MONTHS[m2]}`;
 }
 
+// Verifica se já existe uma solicitação (pendente ou aprovada) que se sobrepõe
+// ao período informado para o mesmo funcionário — evita registro duplicado.
+function findOverlappingRequest(employeeId, start, end, excludeId){
+  return requests.find(r=>
+    r.employeeId===employeeId &&
+    r.id!==excludeId &&
+    (r.status==='pendente' || r.status==='aprovado') &&
+    !(end < r.start || start > r.end)
+  );
+}
+
 async function submitRequest(ev){
   ev.preventDefault();
   const employeeId = document.getElementById('reqEmployee').value;
@@ -1070,6 +1081,13 @@ async function submitRequest(ev){
   const approveNow = document.getElementById('reqApproveNow').checked;
   if(!employeeId){ toast('Selecione o funcionário'); return; }
   if(!start || (reqType==='ferias' && !end)){ toast('Selecione as datas no calendário'); return; }
+
+  const conflict = findOverlappingRequest(employeeId, start, end, null);
+  if(conflict){
+    const emp = employees.find(e=>e.id===employeeId);
+    toast(`Já existe uma solicitação de ${fmtShort(conflict.start)} a ${fmtShort(conflict.end)} para ${emp ? emp.nome : 'esse funcionário'} nesse período`);
+    return;
+  }
 
   let warnMsg = '';
   if(reqType==='ferias'){
@@ -1201,6 +1219,12 @@ async function saveEditRequest(ev){
 
   if(!newStart || (r.type==='ferias' && !newEnd)){ toast('Preencha as datas'); return; }
   if(r.type==='ferias' && new Date(newEnd) < new Date(newStart)){ toast('Data final antes da inicial'); return; }
+
+  const conflict = findOverlappingRequest(r.employeeId, newStart, newEnd, r.id);
+  if(conflict){
+    toast(`Conflito: já existe uma solicitação de ${fmtShort(conflict.start)} a ${fmtShort(conflict.end)} nesse período`);
+    return;
+  }
 
   const ok = await updateRequestRow(editingRequestId, {
     start_date: newStart, end_date: newEnd, note: newNote
