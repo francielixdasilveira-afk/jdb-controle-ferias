@@ -27,6 +27,8 @@
     --weekend-text:#6FE0AE;
     --holiday-bg:#3A2340;
     --holiday-text:#E39EDB;
+    --discount:#B8B8D0;
+    --discount-dim:#2E2E42;
     --radius:14px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -184,13 +186,14 @@
   }
   .field input:focus, .field select:focus{outline:none; border-color:var(--vacation);}
   .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-  .type-toggle{display:flex; gap:8px; margin-bottom:12px;}
+  .type-toggle{display:flex; gap:6px; margin-bottom:12px;}
   .type-toggle button{
-    flex:1; padding:10px; border-radius:8px; border:1px solid var(--border);
-    background:var(--surface-2); color:var(--text-muted); font-size:13px; font-weight:600;
+    flex:1; padding:9px 4px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text-muted); font-size:12px; font-weight:600;
   }
   .type-toggle button.active[data-type="ferias"]{background:var(--vacation-dim); color:var(--vacation); border-color:var(--vacation);}
   .type-toggle button.active[data-type="aniversario"]{background:var(--birthday-dim); color:var(--birthday); border-color:var(--birthday);}
+  .type-toggle button.active[data-type="desconto"]{background:var(--discount-dim); color:var(--discount); border-color:var(--discount);}
   .hint{font-size:11px; color:var(--text-muted); margin-top:-6px; margin-bottom:12px; line-height:1.4;}
   .approve-now-toggle{
     display:flex; align-items:center; gap:9px;
@@ -279,6 +282,7 @@
   .req-cal-pair .cal-cell.in-range{background:var(--vacation-dim); color:var(--vacation);}
   .req-cal-pair .cal-cell.range-edge{background:var(--vacation); color:#0F1C30; font-weight:700;}
   .req-cal-pair .cal-cell.single-pick{background:var(--birthday); color:#0F1C30; font-weight:700;}
+  .req-cal-pair .cal-cell.discount-pick{background:var(--discount); color:#0F1C30; font-weight:700;}
   .req-cal-pair .cal-cell.today{border:1px solid var(--text);}
 
   nav.tabbar{
@@ -372,6 +376,7 @@
       <div class="type-toggle" id="typeToggle">
         <button type="button" class="active" data-type="ferias">🏖 Férias</button>
         <button type="button" data-type="aniversario">🎂 Aniversário</button>
+        <button type="button" data-type="desconto">📉 Desconto</button>
       </div>
       <div class="field">
         <label>Funcionário</label>
@@ -418,6 +423,7 @@
     <div class="legend">
       <span><i style="background:var(--vacation)"></i>Férias aprovadas</span>
       <span><i style="background:var(--birthday)"></i>Folga aniversário</span>
+      <span><i style="background:var(--discount)"></i>Desconto por falta</span>
       <span><i style="background:var(--weekend-bg)"></i>Sábado / Domingo</span>
       <span><i style="background:var(--holiday-bg)"></i>Feriado nacional</span>
     </div>
@@ -873,6 +879,12 @@ function monthsSince(dateStr){
   return Math.max(0, months);
 }
 
+// 'ferias' (período formal) e 'desconto' (abono/desconto informal de 1 dia
+// por falta) descontam do saldo de férias. 'aniversario' não desconta.
+function isDeductingType(type){
+  return type==='ferias' || type==='desconto';
+}
+
 function vacationBalance(emp){
   const months = monthsSince(emp.admissao);
   const cyclesCompleted = Math.floor(months/12);
@@ -880,7 +892,7 @@ function vacationBalance(emp){
   const monthsIntoCurrentCycle = months % 12;
   const accrualCurrentCycle = Math.floor((monthsIntoCurrentCycle/12)*30);
   const taken = requests
-    .filter(r=>r.employeeId===emp.id && r.type==='ferias' && r.status==='aprovado')
+    .filter(r=>r.employeeId===emp.id && isDeductingType(r.type) && r.status==='aprovado')
     .reduce((sum,r)=>sum + daysBetween(r.start, r.end), 0);
   // soma o acúmulo de ciclos completos + o proporcional do ciclo em andamento.
   // não limita em zero: saldo negativo indica férias tiradas por antecipação,
@@ -904,7 +916,7 @@ function vacationDeadlineStatus(emp){
   if(completedCycles===0) return {status:'ok'};
 
   let takenDays = requests
-    .filter(r=>r.employeeId===emp.id && r.type==='ferias' && r.status==='aprovado')
+    .filter(r=>r.employeeId===emp.id && isDeductingType(r.type) && r.status==='aprovado')
     .reduce((sum,r)=>sum + daysBetween(r.start, r.end), 0);
 
   let oldestUnusedCycle = null;
@@ -935,7 +947,7 @@ function buildVacationCycles(emp){
   const accrualCurrentCycle = Math.floor((monthsIntoCurrent/12)*30);
 
   const totalTaken = requests
-    .filter(r=>r.employeeId===emp.id && r.type==='ferias' && r.status==='aprovado')
+    .filter(r=>r.employeeId===emp.id && isDeductingType(r.type) && r.status==='aprovado')
     .reduce((sum,r)=>sum + daysBetween(r.start, r.end), 0);
 
   let remainingTaken = totalTaken;
@@ -1055,6 +1067,10 @@ async function removeEmployee(id){
   }
 }
 
+function isSingleDayType(type){
+  return type==='aniversario' || type==='desconto';
+}
+
 function setReqType(type){
   reqType = type;
   document.querySelectorAll('.type-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===type));
@@ -1065,9 +1081,12 @@ function setReqType(type){
   if(type==='ferias'){
     summaryLabel.textContent = 'Toque no dia de início e depois no dia de fim';
     hint.textContent = '30 dias por ciclo de 12 meses (CLT). Podem ser fracionadas em até 3 períodos: um de no mínimo 14 dias e os demais com pelo menos 5 dias cada. Basta enviar uma solicitação por período.';
-  } else {
+  } else if(type==='aniversario'){
     summaryLabel.textContent = 'Toque no dia da folga de aniversário';
     hint.textContent = 'A folga de aniversário é 1 dia, sugerida em até 30 dias antes ou depois da data de nascimento.';
+  } else {
+    summaryLabel.textContent = 'Toque no dia que será descontado';
+    hint.textContent = 'Uso interno da empresa: desconta 1 dia do saldo de férias em troca de uma falta — não é um período formal de férias para fins da CLT.';
   }
   renderReqSelectionDisplay();
   renderReqCalendar();
@@ -1075,7 +1094,7 @@ function setReqType(type){
 
 function renderReqSelectionDisplay(){
   const el = document.getElementById('reqSelectionDisplay');
-  if(reqType==='aniversario'){
+  if(isSingleDayType(reqType)){
     el.innerHTML = `<span class="sel-pill ${reqSelStart?'filled':''}">${reqSelStart ? fmtShort(reqSelStart) : 'Data não selecionada'}</span>`;
     return;
   }
@@ -1092,7 +1111,7 @@ function reqCalShift(delta){
 }
 
 function pickReqDate(dateStr){
-  if(reqType==='aniversario'){
+  if(isSingleDayType(reqType)){
     reqSelStart = dateStr;
     reqSelEnd = dateStr;
   } else {
@@ -1125,8 +1144,8 @@ function buildReqMonthGridHTML(year, month){
     if(isToday) cls += ' today';
     if(hName) cls += ' holiday';
     else if(isWeekend(year, month, d)) cls += ' weekend';
-    if(reqType==='aniversario' && reqSelStart===dateStr){
-      cls += ' single-pick';
+    if(isSingleDayType(reqType) && reqSelStart===dateStr){
+      cls += reqType==='desconto' ? ' discount-pick' : ' single-pick';
     } else if(reqType==='ferias'){
       if(dateStr===reqSelStart || dateStr===reqSelEnd) cls += ' range-edge';
       else if(reqSelStart && reqSelEnd && dateStr>reqSelStart && dateStr<reqSelEnd) cls += ' in-range';
@@ -1210,7 +1229,7 @@ async function submitRequest(ev){
     setReqType('ferias');
 
     let finalMsg = approveNow ? 'Registrado e aprovado' : 'Solicitação enviada como pendente';
-    if(approveNow && reqType==='ferias'){
+    if(approveNow && isDeductingType(reqType)){
       const emp = employees.find(e=>e.id===employeeId);
       if(emp){
         const bal = vacationBalance(emp);
@@ -1271,7 +1290,7 @@ function openEditRequestModal(id){
   if(!r) return;
   editingRequestId = id;
   const emp = employees.find(e=>e.id===r.employeeId);
-  const icon = r.type==='ferias' ? '🏖 Férias' : '🎂 Folga de aniversário';
+  const icon = r.type==='ferias' ? '🏖 Férias' : r.type==='desconto' ? '📉 Desconto por falta' : '🎂 Folga de aniversário';
   document.getElementById('editRequestEmpLabel').textContent = `${icon} · ${emp ? emp.nome : '(removido)'}`;
 
   document.getElementById('editReqStart').value = r.start;
@@ -1336,17 +1355,17 @@ function openEmployeeDetail(id){
   }).join('');
 
   const empRequests = requests
-    .filter(r=>r.employeeId===id && r.type==='ferias')
+    .filter(r=>r.employeeId===id && isDeductingType(r.type))
     .slice()
     .sort((a,b)=> a.start < b.start ? 1 : -1);
   const reqEl = document.getElementById('detailRequestsList');
   reqEl.innerHTML = empRequests.length===0
-    ? '<div class="empty">Nenhuma férias registrada ainda.</div>'
+    ? '<div class="empty">Nenhuma férias ou desconto registrado ainda.</div>'
     : empRequests.map(r=>`<div class="item">
-        <div class="avatar">🏖</div>
+        <div class="avatar">${r.type==='desconto' ? '📉' : '🏖'}</div>
         <div class="info">
-          <div class="name">${fmtShort(r.start)} – ${fmtShort(r.end)}</div>
-          <div class="sub">${daysBetween(r.start,r.end)} dias${r.note ? ' · '+r.note : ''}</div>
+          <div class="name">${r.type==='desconto' ? fmtShort(r.start)+' · desconto por falta' : fmtShort(r.start)+' – '+fmtShort(r.end)}</div>
+          <div class="sub">${daysBetween(r.start,r.end)} dia${daysBetween(r.start,r.end)>1?'s':''}${r.note ? ' · '+r.note : ''}</div>
         </div>
         <span class="badge ${r.status}">${r.status}</span>
       </div>`).join('');
@@ -1407,9 +1426,11 @@ function buildMonthGridHTML(year, month){
     else if(isWeekend(year, month, d)) cls += ' weekend';
     const vac = requests.some(r=>r.type==='ferias' && r.status==='aprovado' && dateStr>=r.start && dateStr<=r.end);
     const bday = requests.some(r=>r.type==='aniversario' && r.status==='aprovado' && dateStr===r.start);
+    const disc = requests.some(r=>r.type==='desconto' && r.status==='aprovado' && dateStr===r.start);
     let dots = '';
     if(vac) dots += `<span style="background:var(--vacation)"></span>`;
     if(bday) dots += `<span style="background:var(--birthday)"></span>`;
+    if(disc) dots += `<span style="background:var(--discount)"></span>`;
     cells += `<div class="${cls}"${hName?` title="${hName}"`:''}><span>${d}</span><div class="dots">${dots}</div></div>`;
   }
   return `<div class="cal-month">
@@ -1466,8 +1487,10 @@ function requestItemHTML(r, mode){
   const empName = emp ? emp.nome : '(removido)';
   const label = r.type==='ferias'
     ? `${fmtShort(r.start)} – ${fmtShort(r.end)} · ${daysBetween(r.start,r.end)} dias`
-    : `Folga de aniversário · ${fmtShort(r.start)}`;
-  const icon = r.type==='ferias' ? '🏖' : '🎂';
+    : r.type==='desconto'
+      ? `Desconto por falta · ${fmtShort(r.start)}`
+      : `Folga de aniversário · ${fmtShort(r.start)}`;
+  const icon = r.type==='ferias' ? '🏖' : r.type==='desconto' ? '📉' : '🎂';
 
   let actionsHTML;
   if(mode==='pending'){
@@ -1615,10 +1638,12 @@ function downloadCSV(filename, rows){
 }
 
 function statusLabel(s){
-  return {pendente:'Pendente', aprovado:'Aprovado', negado:'Negado'}[s] || s;
+  return {pendente:'Pendente', aprovado:'Aprovado', negado:'Negado', cancelado:'Cancelado'}[s] || s;
 }
 function typeLabel(t){
-  return t==='ferias' ? 'Férias' : 'Folga de aniversário';
+  if(t==='ferias') return 'Férias';
+  if(t==='desconto') return 'Desconto por falta';
+  return 'Folga de aniversário';
 }
 
 function exportEmployeesCSV(){
