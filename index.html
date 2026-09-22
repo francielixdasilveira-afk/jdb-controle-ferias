@@ -146,6 +146,11 @@
   .badge.cancelado{background:var(--surface-2); color:var(--text-muted);}
   .badge.vencida{background:var(--danger-dim); color:var(--danger);}
   .badge.vencendo{background:var(--pending-dim); color:var(--pending);}
+  .badge.historico{background:var(--discount-dim); color:var(--discount);}
+  .historic-cutoff-box{background:var(--surface-2); border-radius:12px; padding:14px; margin:14px 0;}
+  .historic-cutoff-box label{font-weight:600; display:block; margin-bottom:2px;}
+  .historic-cutoff-box .row2{display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:8px;}
+  .historic-cutoff-box input[type="date"]{padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text);}
 
   .empty{
     text-align:center; padding:26px 14px;
@@ -534,6 +539,11 @@
           <input type="date" id="empAdmission" required>
         </div>
       </div>
+      <div class="field">
+        <label>Já estava em dia com férias até (opcional)</label>
+        <input type="date" id="empCutoff">
+        <p class="hint" style="margin-top:4px;">Preencha se o funcionário já vinha trabalhando antes deste cadastro e você sabe que estava em dia. Deixe em branco se não sabe.</p>
+      </div>
       <div class="row2" style="margin-top:6px;">
         <button type="button" class="btn-ghost" onclick="closeEmployeeModal()">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar</button>
@@ -573,6 +583,15 @@
   <div class="modal" style="max-height:88vh;">
     <h3 id="detailEmpName">Funcionário</h3>
     <p class="hint" id="detailEmpSub" style="margin-top:-8px;"></p>
+
+    <div class="historic-cutoff-box">
+      <label>Já estava em dia com as férias (fora do sistema) até quando?</label>
+      <p class="hint" style="margin-top:2px;">Ciclos que terminam até essa data não serão contados como vencidos. Deixe em branco se não quiser aplicar nenhum corte.</p>
+      <div class="row2">
+        <input type="date" id="detailCutoffInput">
+        <button type="button" class="btn-primary" id="detailCutoffSaveBtn" style="width:auto; padding:10px 16px;">Salvar</button>
+      </div>
+    </div>
 
     <div id="detailCyclesList"></div>
 
@@ -696,7 +715,7 @@ const SUPABASE_KEY = 'sb_publishable_ssXdXCNklK8McHGap3g0iQ_HwI2TAf8';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function rowToEmployee(row){
-  return {id: row.id, nome: row.nome, cargo: row.cargo || '', nascimento: row.nascimento, admissao: row.admissao, ativo: row.ativo !== false};
+  return {id: row.id, nome: row.nome, cargo: row.cargo || '', nascimento: row.nascimento, admissao: row.admissao, ativo: row.ativo !== false, feriasEmDiaAte: row.ferias_em_dia_ate || null};
 }
 function rowToRequest(row){
   return {id: row.id, employeeId: row.employee_id, type: row.type, start: row.start_date, end: row.end_date, note: row.note || '', status: row.status, createdAt: row.created_at};
@@ -820,7 +839,7 @@ async function loadData(){
 
 async function insertEmployeeRow(emp){
   const {error} = await db.from('employees').insert({
-    id: emp.id, nome: emp.nome, cargo: emp.cargo, nascimento: emp.nascimento, admissao: emp.admissao, ativo: emp.ativo
+    id: emp.id, nome: emp.nome, cargo: emp.cargo, nascimento: emp.nascimento, admissao: emp.admissao, ativo: emp.ativo, ferias_em_dia_ate: emp.feriasEmDiaAte || null
   });
   if(error){ console.error('Erro ao salvar funcionário:', describeError(error)); toast('Erro ao salvar funcionário: ' + describeError(error)); }
   return !error;
@@ -885,9 +904,24 @@ function isDeductingType(type){
   return type==='ferias' || type==='desconto';
 }
 
+// Quando o funcionário já estava "em dia" com as férias antes de entrar no
+// sistema (corte histórico informado no cadastro), os ciclos completos até
+// essa data não devem contar como pendentes/vencidos nem consumir saldo.
+function coveredCyclesCount(emp, completedCycles){
+  if(!emp.feriasEmDiaAte) return 0;
+  let covered = 0;
+  for(let i=0; i<completedCycles; i++){
+    const cycleEnd = addMonths(emp.admissao, (i+1)*12);
+    if(fmtISOFromDate(cycleEnd) <= emp.feriasEmDiaAte) covered++;
+    else break;
+  }
+  return covered;
+}
+
 function vacationBalance(emp){
   const months = monthsSince(emp.admissao);
-  const cyclesCompleted = Math.floor(months/12);
+  let cyclesCompleted = Math.floor(months/12);
+  cyclesCompleted -= coveredCyclesCount(emp, cyclesCompleted);
   const availableFromCycles = cyclesCompleted * 30;
   const monthsIntoCurrentCycle = months % 12;
   const accrualCurrentCycle = Math.floor((monthsIntoCurrentCycle/12)*30);
@@ -921,6 +955,8 @@ function vacationDeadlineStatus(emp){
 
   let oldestUnusedCycle = null;
   for(let i=0; i<completedCycles; i++){
+    const cycleEnd = addMonths(emp.admissao, (i+1)*12);
+    if(emp.feriasEmDiaAte && fmtISOFromDate(cycleEnd) <= emp.feriasEmDiaAte) continue;
     if(takenDays >= 30){ takenDays -= 30; continue; }
     oldestUnusedCycle = i;
     break;
@@ -957,6 +993,20 @@ function buildVacationCycles(emp){
     const cycleStart = addMonths(emp.admissao, i*12);
     const cycleEnd = addMonths(emp.admissao, (i+1)*12);
     const deadline = addMonths(emp.admissao, (i+2)*12);
+
+    // Ciclo coberto pelo corte histórico: não consome dias registrados no
+    // sistema nem entra nos alertas de vencimento — é tratado como já
+    // resolvido fora do sistema.
+    if(emp.feriasEmDiaAte && fmtISOFromDate(cycleEnd) <= emp.feriasEmDiaAte){
+      cycles.push({
+        label: `${i+1}º período aquisitivo`,
+        cycleStart, cycleEnd, deadline,
+        capacity: 30, taken: 30, remaining: 0,
+        daysToDeadline: null, status: 'historico'
+      });
+      continue;
+    }
+
     const takenHere = Math.min(30, remainingTaken);
     remainingTaken -= takenHere;
     const daysToDeadline = Math.round((deadline - today)/86400000);
@@ -994,7 +1044,8 @@ const CYCLE_STATUS_LABEL = {
   vencendo: 'Vencendo',
   vencida: 'Vencida',
   quitado: 'Quitado',
-  aberto: 'Em formação'
+  aberto: 'Em formação',
+  historico: 'Em dia (histórico)'
 };
 
 function nextBirthday(emp){
@@ -1030,8 +1081,9 @@ async function submitEmployee(ev){
   const cargo = document.getElementById('empCargo').value.trim();
   const birth = document.getElementById('empBirth').value;
   const admission = document.getElementById('empAdmission').value;
+  const cutoff = document.getElementById('empCutoff').value || null;
   if(!name || !birth || !admission) return;
-  const newEmp = {id: uid(), nome: name, cargo: cargo, nascimento: birth, admissao: admission, ativo: true};
+  const newEmp = {id: uid(), nome: name, cargo: cargo, nascimento: birth, admissao: admission, ativo: true, feriasEmDiaAte: cutoff};
   const ok = await insertEmployeeRow(newEmp);
   if(ok){
     employees.push(newEmp);
@@ -1315,9 +1367,14 @@ function closeEditRequestModal(){
   document.getElementById('editRequestModalBg').classList.remove('active');
 }
 
+let detailEmployeeId = null;
+
 function openEmployeeDetail(id){
   const emp = employees.find(e=>e.id===id);
   if(!emp) return;
+  detailEmployeeId = id;
+
+  document.getElementById('detailCutoffInput').value = emp.feriasEmDiaAte || '';
 
   document.getElementById('detailEmpName').textContent = emp.nome;
   document.getElementById('detailEmpSub').textContent =
@@ -1374,7 +1431,22 @@ function openEmployeeDetail(id){
 }
 
 function closeEmployeeDetail(){
+  detailEmployeeId = null;
   document.getElementById('employeeDetailModalBg').classList.remove('active');
+}
+
+async function saveCutoffDate(){
+  if(!detailEmployeeId) return;
+  const emp = employees.find(e=>e.id===detailEmployeeId);
+  if(!emp) return;
+  const value = document.getElementById('detailCutoffInput').value || null;
+  const ok = await updateEmployeeRow(detailEmployeeId, {ferias_em_dia_ate: value});
+  if(ok){
+    emp.feriasEmDiaAte = value;
+    toast(value ? 'Corte histórico salvo' : 'Corte histórico removido');
+    openEmployeeDetail(detailEmployeeId);
+    renderAll();
+  }
 }
 
 async function saveEditRequest(ev){
@@ -1732,6 +1804,7 @@ function wireRequestFormEvents(){
   document.getElementById('editRequestForm').addEventListener('submit', saveEditRequest);
   document.getElementById('editReqCancelBtn').addEventListener('click', closeEditRequestModal);
   document.getElementById('detailCloseBtn').addEventListener('click', closeEmployeeDetail);
+  document.getElementById('detailCutoffSaveBtn').addEventListener('click', saveCutoffDate);
 }
 
 wireRequestFormEvents();
